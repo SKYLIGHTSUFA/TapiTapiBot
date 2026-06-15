@@ -15,7 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libheif-examples \
     libzbar0 \
     libmagic1 \
-    tesseract-ocr \
     ffmpeg \
     libsm6 \
     libxext6 \

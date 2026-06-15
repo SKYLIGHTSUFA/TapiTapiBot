@@ -11,9 +11,28 @@ async def generate_unique_ticket_code() -> str:
                 return code
 
 async def create_ticket(telegram_id: int, receipt_id: int) -> Ticket:
-    code = await generate_unique_ticket_code()
+    tickets = await create_tickets_for_bottles(telegram_id, receipt_id, [{"name": None, "ticket_count": 1}])
+    return tickets[0]
+
+
+async def create_tickets_for_bottles(telegram_id: int, receipt_id: int, products: list[dict]) -> list[Ticket]:
+    tickets = []
+    bottle_index = 1
     async with AsyncSessionLocal() as session:
-        ticket = Ticket(code=code, telegram_id=telegram_id, receipt_id=receipt_id, status=TicketStatus.ACTIVE)
-        session.add(ticket)
+        for product in products:
+            for _ in range(int(product.get("ticket_count") or 0)):
+                ticket = Ticket(
+                    code=await generate_unique_ticket_code(),
+                    telegram_id=telegram_id,
+                    receipt_id=receipt_id,
+                    product_name=product.get("name"),
+                    bottle_index=bottle_index,
+                    status=TicketStatus.ACTIVE,
+                )
+                session.add(ticket)
+                tickets.append(ticket)
+                bottle_index += 1
         await session.commit()
-        return ticket
+        for ticket in tickets:
+            await session.refresh(ticket)
+        return tickets

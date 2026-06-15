@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Розыгрыши{% endblock %}
+{% block content %}
+<h1 class="mb-4">Розыгрыши</h1>
+<table class="table table-striped"><thead><tr><th>ID</th><th>Тип</th><th>Время по расписанию</th><th>Время проведения</th><th>Статус</th><th>Победители</th></tr></thead><tbody>{% for d in draws %}<tr><td>{{ d.id }}</td><td>{{ d.draw_type.value }}</td><td>{{ d.scheduled_time.strftime('%d.%m.%Y %H:%M') if d.scheduled_time else '' }}</td><td>{{ d.executed_at.strftime('%d.%m.%Y %H:%M') if d.executed_at else '' }}</td><td>{{ d.status }}</td><td>{% if d.winners_data %}<button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#winnersModal{{ d.id }}">Показать</button><div class="modal fade" id="winnersModal{{ d.id }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5>Победители</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><ul>{% for w in d.winners_data %}<li>Билет {{ w.ticket_code }} – пользователь {{ w.telegram_id }}</li>{% endfor %}</ul></div></div></div></div>{% else %}Нет данных{% endif %}</td></tr>{% endfor %}</tbody></table>
+{% endblock %}

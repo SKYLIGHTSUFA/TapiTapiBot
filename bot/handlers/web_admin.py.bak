@@ -1,0 +1,149 @@
+from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.responses import HTMLResponse
+import secrets
+from bot.config import ADMIN_WEB_PASSWORD
+from bot.models.database import AsyncSessionLocal, User, Ticket, Draw, Receipt, TicketStatus
+from bot.services.encryption import decrypt
+from sqlalchemy import select, func
+
+app = FastAPI(title="Тапитапи Админка")
+security = HTTPBasic()
+
+def verify_auth(credentials: HTTPBasicCredentials = Depends(security)):
+    correct = secrets.compare_digest(credentials.password, ADMIN_WEB_PASSWORD)
+    if not correct:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    return True
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_panel(auth=Depends(verify_auth)):
+    async with AsyncSessionLocal() as session:
+        users_count = await session.scalar(select(func.count()).select_from(User))
+        tickets_count = await session.scalar(select(func.count()).select_from(Ticket))
+        active_tickets = await session.scalar(select(func.count()).select_from(Ticket).where(Ticket.status == TicketStatus.ACTIVE))
+        draws_count = await session.scalar(select(func.count()).select_from(Draw))
+        receipts_count = await session.scalar(select(func.count()).select_from(Receipt))
+    return f"""
+    <html>
+    <head><title>Тапитапи Админка</title>
+    <style>body {{ font-family: Arial; margin: 40px; }} a {{ font-size: 18px; }}</style></head>
+    <body>
+    <h1>Панель администратора</h1>
+    <ul>
+        <li>👥 Пользователей: {users_count}</li>
+        <li>🎫 Всего билетов: {tickets_count}</li>
+        <li>✅ Активных билетов: {active_tickets}</li>
+        <li>📄 Загружено чеков: {receipts_count}</li>
+        <li>🎲 Проведено розыгрышей: {draws_count}</li>
+    </ul>
+    <hr>
+    <p><a href="/admin/users">👥 Пользователи (ФИО, телефоны, города)</a></p>
+    <p><a href="/admin/receipts">📄 Просмотр чеков</a></p>
+    </body>
+    </html>
+    """
+
+@app.get("/admin/users", response_class=HTMLResponse)
+async def list_users(auth=Depends(verify_auth)):
+    async with AsyncSessionLocal() as session:
+        users = await session.execute(select(User).order_by(User.registered_at.desc()).limit(100))
+        users = users.scalars().all()
+    rows = "".join(
+        f"<tr>"
+        f"<td>{u.telegram_id}</td>"
+        f"<td>{decrypt(u.full_name) if u.full_name else '—'}</td>"
+        f"<td>{decrypt(u.phone) if u.phone else '—'}</td>"
+        f"<td>{decrypt(u.city) if u.city else '—'}</td>"
+        f"<td>{decrypt(u.birth_date) if u.birth_date else '—'}</td>"
+        f"<td>{u.registered_at.strftime('%d.%m.%Y %H:%M')}</td>"
+        f"</tr>"
+        for u in users
+    )
+    return f"""
+    <html>
+    <head>
+        <title>Пользователи</title>
+        <style>
+            body {{ font-family: Arial; margin: 40px; }}
+            table {{ border-collapse: collapse; width: 100%; }}
+            th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
+            th {{ background: #f2f2f2; }}
+        </style>
+    </head>
+    <body>
+    <h2>Пользователи (расшифровано)</h2>
+    <table>
+        <tr>
+            <th>Telegram ID</th>
+            <th>ФИО</th>
+            <th>Телефон</th>
+            <th>Город</th>
+            <th>Дата рождения</th>
+            <th>Регистрация</th>
+        </tr>
+        {rows}
+    </table>
+    <p><a href="/admin">← Назад</a></p>
+    </body>
+    </html>
+    """
+
+@app.get("/admin/receipts", response_class=HTMLResponse)
+async def list_receipts(auth=Depends(verify_auth)):
+    async with AsyncSessionLocal() as session:
+        receipts = await session.execute(select(Receipt).order_by(Receipt.uploaded_at.desc()).limit(50))
+        receipts = receipts.scalars().all()
+    rows = "".join(
+        f"<tr><td>{r.id}</td><td>{r.telegram_id}</td><td>{r.purchase_date}</td>"
+        f"<td>{r.amount}</td><td><a href='{r.photo_url}' target='_blank'>Фото</a></td></tr>"
+        for r in receipts
+    )
+    return f"""
+    <html>
+    <head>
+        <title>Чеки</title>
+        <style>
+            body {{ font-family: Arial; margin: 40px; }}
+            table {{ border-collapse: collapse; width: 100%; }}
+            th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
+            th {{ background: #f2f2f2; }}
+        </style>
+    </head>
+    <body>
+    <h2>Последние чеки</h2>
+    <table>
+        <tr><th>ID</th><th>User ID</th><th>Дата покупки</th><th>Сумма</th><th>Фото</th></tr>
+        {rows}
+    </table>
+    <p><a href="/admin">← Назад</a></p>
+    </body>
+    </html>
+    """
+
+async def start_web_admin():
+    import uvicorn
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
+    server = uvicorn.Server(config)
+    await server.serve()
+@app.get("/admin/tickets", response_class=HTMLResponse)
+async def list_tickets(auth=Depends(verify_auth)):
+    async with AsyncSessionLocal() as session:
+        tickets = await session.execute(select(Ticket).order_by(Ticket.created_at.desc()).limit(100))
+        tickets = tickets.scalars().all()
+    rows = "".join(f"<tr><td>{t.code}</td><td>{t.telegram_id}</td><td>{t.status.value}</td><td>{t.created_at}</td></tr>" for t in tickets)
+    return f"""
+    <html><body>
+    <h2>Последние 100 билетов</h2>
+    <table border="1"><tr><th>Код</th><th>User ID</th><th>Статус</th><th>Дата создания</th></tr>{rows}优雅
+    </body></html>
+    """
+import os
+from fastapi.responses import FileResponse
+
+@app.get("/media/{filename}")
+async def get_media(filename: str):
+    file_path = os.path.join("/root/DASKO/tapitapi-bot/media", filename)
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    return {"error": "File not found"}

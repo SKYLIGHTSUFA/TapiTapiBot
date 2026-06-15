@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Пользователи{% endblock %}
+{% block content %}
+<h1 class="mb-4">Пользователи</h1>
+<div class="table-responsive">
+    <table class="table table-striped">
+        <thead>
+            <tr><th>ID Telegram</th><th>Username</th><th>ФИО</th><th>Телефон</th><th>Дата рождения</th><th>Дата регистрации</th><th>Действие</th></tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td>{{ u.telegram_id }}</td>
+                <td>{{ u.username or '' }}</td>
+                <td>{{ u.full_name }}</td>
+                <td>{{ u.phone }}</td>
+                <td>{{ u.birth_date }}</td>
+                <td>{{ u.registered_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                <td>
+                    <form method="post" action="/admin/user/delete" onsubmit="return confirm('Удалить пользователя?');">
+                        <input type="hidden" name="telegram_id" value="{{ u.telegram_id }}">
+                        <button type="submit" class="btn btn-danger btn-sm">Удалить</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<nav><ul class="pagination">{% for p in range(1, pages+1) %}<li class="page-item"><a class="page-link" href="?page={{ p }}">{{ p }}</a></li>{% endfor %}</ul></nav>
+{% endblock %}

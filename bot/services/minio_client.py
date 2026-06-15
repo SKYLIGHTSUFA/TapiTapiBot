@@ -1,7 +1,7 @@
 from minio import Minio
 from minio.error import S3Error
 import io
-from bot.config import MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MINIO_BUCKET, MINIO_SECURE
+from bot.config import MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MINIO_BUCKET, MINIO_SECURE, PUBLIC_IP
 
 _client = None
 
@@ -28,6 +28,7 @@ async def upload_receipt_photo(image_bytes: bytes, filename: str) -> str:
             length=len(image_bytes),
             content_type="image/jpeg"
         )
-        return f"http://{MINIO_ENDPOINT}/{MINIO_BUCKET}/{filename}"
+        # Возвращаем внешний URL
+        return f"http://{PUBLIC_IP}:9000/{MINIO_BUCKET}/{filename}"
     except S3Error as e:
         raise Exception(f"MinIO upload failed: {e}")

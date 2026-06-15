@@ -6,6 +6,9 @@ from bot.dispatcher import bot
 
 router = Router()
 
+# Список текстов кнопок меню, которые не нужно пересылать
+MENU_TEXTS = ["🎫 Мои билеты", "📅 Ближайший розыгрыш", "📜 Правила акции", "🆘 Поддержка"]
+
 @router.message(Command("support"))
 async def support_command(message: Message):
     await message.answer(
@@ -15,6 +18,9 @@ async def support_command(message: Message):
 
 @router.message(F.text & ~F.command)
 async def forward_to_admins(message: Message):
+    # Если это кнопка меню – не пересылаем
+    if message.text in MENU_TEXTS:
+        return
     if message.from_user.id in ADMIN_IDS:
         return
     for admin_id in ADMIN_IDS:

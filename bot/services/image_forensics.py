@@ -4,7 +4,6 @@ from PIL import Image
 import io
 import logging
 from scipy import ndimage
-from image_analyser import ImageAnalyser
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

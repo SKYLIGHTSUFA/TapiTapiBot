@@ -1,7 +1,8 @@
-from aiogram import Router
-from aiogram.types import Message
+from aiogram import F, Router
+from aiogram.types import CallbackQuery, Message
 from aiogram.filters import Command
-from bot.models.database import AsyncSessionLocal, Ticket, TicketStatus
+from datetime import datetime
+from bot.models.database import AsyncSessionLocal, PrizeDelivery, Ticket, TicketStatus
 from sqlalchemy import select
 
 router = Router()
@@ -23,3 +24,36 @@ async def show_my_tickets(message: Message):
             codes = "\n".join(t.code for t in active[:10])
             text += f"\nПоследние активные:\n{codes}"
         await message.answer(text)
+
+
+@router.callback_query(F.data.startswith("confirm_prize:"))
+async def confirm_prize(callback: CallbackQuery):
+    delivery_id = int(callback.data.split(":", 1)[1])
+    async with AsyncSessionLocal() as session:
+        delivery = await session.get(PrizeDelivery, delivery_id)
+        if not delivery or delivery.telegram_id != callback.from_user.id:
+            await callback.answer("Приз не найден", show_alert=True)
+            return
+        if delivery.status == "expired":
+            await callback.answer("Срок подтверждения истёк", show_alert=True)
+            return
+        if delivery.status == "confirmed":
+            await callback.answer("Уже подтверждено")
+            return
+
+        delivery.status = "confirmed"
+        delivery.responded_at = datetime.utcnow()
+        await session.commit()
+
+        if delivery.prize_type == "ozon":
+            await callback.message.answer(
+                f"✅ Получение подтверждено.\n"
+                f"Код сертификата Ozon: `{delivery.prize_code}`\n"
+                "Активация: Ozon → Активация подарочной карты."
+            )
+        else:
+            await callback.message.answer(
+                "✅ Получение подтверждено.\n"
+                "Для оформления главного приза отправьте в поддержку ФИО, адрес и телефон."
+            )
+    await callback.answer("Подтверждено")

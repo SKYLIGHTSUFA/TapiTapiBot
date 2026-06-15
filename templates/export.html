@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Экспорт данных{% endblock %}
+{% block content %}
+<h1 class="mb-4">Экспорт данных</h1>
+<div class="row">
+    <div class="col-md-4 mb-3"><div class="card"><div class="card-body"><h5>Пользователи</h5><form method="post" action="/admin/export/csv"><input type="hidden" name="data_type" value="users"><button type="submit" class="btn btn-primary">Скачать CSV</button></form></div></div></div>
+    <div class="col-md-4 mb-3"><div class="card"><div class="card-body"><h5>Билеты</h5><form method="post" action="/admin/export/csv"><input type="hidden" name="data_type" value="tickets"><button type="submit" class="btn btn-primary">Скачать CSV</button></form></div></div></div>
+    <div class="col-md-4 mb-3"><div class="card"><div class="card-body"><h5>Чеки</h5><form method="post" action="/admin/export/csv"><input type="hidden" name="data_type" value="receipts"><button type="submit" class="btn btn-primary">Скачать CSV</button></form></div></div></div>
+</div>
+{% endblock %}

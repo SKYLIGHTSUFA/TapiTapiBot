@@ -1,3 +1,4 @@
+from aiogram.filters import Command
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -6,6 +7,7 @@ from bot.keyboards.inline import agreement_keyboard, phone_keyboard
 from bot.models.database import AsyncSessionLocal, User, UserStatus
 from bot.services.encryption import encrypt
 from bot.services.audit import log_action
+from datetime import datetime
 
 router = Router()
 
@@ -66,6 +68,19 @@ async def process_birthdate(message: Message, state: FSMContext):
     if not re.match(r'^\d{2}\.\d{2}\.\d{4}$', date_str):
         await message.answer("Формат: ДД.ММ.ГГГГ")
         return
+    try:
+        birth_date = datetime.strptime(date_str, "%d.%m.%Y")
+        # Проверка возраста
+        today = datetime.now()
+        age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+        if age < 18:
+            await message.answer("Извините, участие в акции разрешено только с 18 лет.")
+            await state.clear()
+            return
+    except ValueError:
+        await message.answer("Некорректная дата.")
+        return
+
     data = await state.get_data()
     encrypted_data = {
         "phone": encrypt(data['phone']),
@@ -86,4 +101,13 @@ async def process_birthdate(message: Message, state: FSMContext):
         await session.commit()
     await log_action("user_registered", message.from_user.id, {"phone": data['phone'][:5]+"***"})
     await message.answer("✅ Регистрация завершена! Теперь загружайте чеки.")
+    from bot.keyboards.menu import main_menu
+    await message.answer("Главное меню:", reply_markup=main_menu())
+    from bot.keyboards.menu import main_menu
+    await message.answer("Главное меню:", reply_markup=main_menu())
     await state.clear()
+
+@router.message(Command("cancel"))
+async def cancel_registration(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Регистрация отменена. Начните заново с /start.")

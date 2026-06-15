@@ -1,16 +1,16 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 import secrets
 import hashlib
 import json
-from sqlalchemy import select
-from bot.config import TIMEZONE, DATABASE_URL, START_DATE, MAIN_DRAW_DATE, END_DATE
+from sqlalchemy import select, func
+from bot.config import TIMEZONE, DATABASE_URL, MAIN_DRAW_DATE, MAIN_DRAW_PRIZES, END_DATE
 from bot.models.database import AsyncSessionLocal, Draw, DrawType, Ticket, TicketStatus, Receipt
 from bot.services.audit import log_action
-from bot.services.fns_validator import verify_receipt_with_fns
 
 jobstores = {'default': SQLAlchemyJobStore(url=DATABASE_URL.replace("+asyncpg", ""))}
 scheduler = AsyncIOScheduler(jobstores=jobstores, timezone=pytz.timezone(TIMEZONE))
@@ -32,30 +32,53 @@ def init_scheduler():
     now = datetime.now(tz)
     if is_after_end(now):
         return
-    # Каждый понедельник в 12:00
-    scheduler.add_job(run_monday_draw, CronTrigger(day_of_week='mon', hour=12, minute=0, timezone=tz), id='monday_draw')
-    # Дополнительно: напоминание за 3 часа до розыгрыша – отдельная задача
-    scheduler.add_job(send_reminders, CronTrigger(day_of_week='mon', hour=9, minute=0, timezone=tz), id='reminder_job')
+    main_draw_at = tz.localize(datetime.strptime(f"{MAIN_DRAW_DATE} 12:00", "%Y-%m-%d %H:%M"))
+    # replace_existing=True чтобы при перезапуске не было конфликта
+    scheduler.add_job(
+        run_monday_draw,
+        CronTrigger(day_of_week='mon', hour=12, minute=0, timezone=tz),
+        id='monday_draw',
+        replace_existing=True
+    )
+    scheduler.add_job(
+        send_reminders,
+        CronTrigger(day_of_week='mon', hour=9, minute=0, timezone=tz),
+        id='reminder_job',
+        replace_existing=True
+    )
+    if now < main_draw_at:
+        scheduler.add_job(
+            run_main_draw,
+            DateTrigger(run_date=main_draw_at, timezone=tz),
+            id='main_draw',
+            replace_existing=True
+        )
+    scheduler.add_job(
+        expire_pending_prizes,
+        CronTrigger(minute=0, timezone=tz),
+        id='expire_pending_prizes',
+        replace_existing=True
+    )
     scheduler.start()
 
 async def run_monday_draw():
     now = datetime.now(pytz.timezone(TIMEZONE))
     if is_after_end(now):
         return
-    if is_main_draw_date(now):
-        await perform_draw_with_fns_check(DrawType.MAIN, 3)
-    elif is_first_monday_of_month(now):
+    await perform_draw_with_fns_check(DrawType.WEEKLY, 2)
+    if is_first_monday_of_month(now):
         await perform_draw_with_fns_check(DrawType.MONTHLY, 5)
-    else:
-        await perform_draw_with_fns_check(DrawType.WEEKLY, 2)
+
+async def run_main_draw():
+    now = datetime.now(pytz.timezone(TIMEZONE))
+    if not is_after_end(now):
+        await perform_draw_with_fns_check(DrawType.MAIN, MAIN_DRAW_PRIZES)
 
 async def send_reminders():
-    # За 3 часа до розыгрыша (отправляется в 9:00 по Москве)
     now = datetime.now(pytz.timezone(TIMEZONE))
     if is_main_draw_date(now) or is_after_end(now):
         return
     from bot.dispatcher import bot
-    from bot.models.database import AsyncSessionLocal, Ticket, TicketStatus
     async with AsyncSessionLocal() as session:
         users = await session.execute(select(Ticket.telegram_id).where(Ticket.status == TicketStatus.ACTIVE).distinct())
         users = users.scalars().all()
@@ -74,38 +97,39 @@ async def perform_draw_with_fns_check(draw_type: DrawType, prizes_count: int):
         draw_id = draw.id
 
     async with AsyncSessionLocal() as session:
-        tickets = (await session.execute(select(Ticket).where(Ticket.status == TicketStatus.ACTIVE))).scalars().all()
+        draw = await session.get(Draw, draw_id)
+        tickets = (await session.execute(
+            select(Ticket).where(
+                Ticket.status == TicketStatus.ACTIVE,
+                Ticket.created_at <= draw_time,
+            )
+        )).scalars().all()
         if not tickets:
             draw.status = "completed"
+            draw.executed_at = datetime.utcnow()
             await session.commit()
             return
 
-    temp_tickets = tickets.copy()
-    winners = []
+        temp_tickets = list(tickets)
+        winners = []
 
-    for prize_index in range(prizes_count):
-        found = False
-        while temp_tickets:
-            idx = secrets.randbelow(len(temp_tickets))
-            candidate = temp_tickets.pop(idx)
-            # ФНС проверка
-            receipt = await get_receipt_by_ticket(candidate.id)
-            if receipt:
-                date_str = receipt.purchase_date.strftime("%d.%m.%Y")
-                ok = await verify_receipt_with_fns(date_str, receipt.amount, receipt.fp_code, receipt.receipt_number)
-                if not ok:
+        for prize_index in range(prizes_count):
+            found = False
+            while temp_tickets:
+                idx = secrets.randbelow(len(temp_tickets))
+                candidate = temp_tickets.pop(idx)
+                receipt = await get_receipt_by_ticket(candidate.id)
+                if not receipt or not receipt.validated:
                     await invalidate_ticket(candidate.id)
                     continue
-            candidate.status = TicketStatus.WON
-            candidate.won_in_draw = draw_type.value
-            winners.append(candidate)
-            found = True
-            break
-        if not found:
-            break
+                candidate.status = TicketStatus.WON
+                candidate.won_in_draw = draw_type.value
+                winners.append(candidate)
+                found = True
+                break
+            if not found:
+                break
 
-    async with AsyncSessionLocal() as session:
-        draw = await session.get(Draw, draw_id)
         winners_data = [{"ticket_code": w.code, "telegram_id": w.telegram_id} for w in winners]
         draw.winners_data = winners_data
         draw.audit_hash = hashlib.sha256(json.dumps(winners_data).encode()).hexdigest()
@@ -130,3 +154,29 @@ async def invalidate_ticket(ticket_id: int):
         if ticket:
             ticket.status = TicketStatus.CANCELLED
             await session.commit()
+
+async def expire_pending_prizes():
+    from datetime import timedelta
+    from bot.models.database import PrizeDelivery
+
+    deadline = datetime.utcnow() - timedelta(hours=72)
+    async with AsyncSessionLocal() as session:
+        deliveries = (await session.execute(
+            select(PrizeDelivery).where(
+                PrizeDelivery.status == "pending",
+                PrizeDelivery.notified_at <= deadline,
+            )
+        )).scalars().all()
+        for delivery in deliveries:
+            delivery.status = "expired"
+            ticket = (await session.execute(
+                select(Ticket).where(Ticket.code == delivery.ticket_code)
+            )).scalar_one_or_none()
+            if ticket:
+                ticket.status = TicketStatus.CANCELLED
+            await log_action(
+                "winner_no_response",
+                delivery.telegram_id,
+                {"draw_id": delivery.draw_id, "ticket_code": delivery.ticket_code},
+            )
+        await session.commit()

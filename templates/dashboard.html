@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Дашборд{% endblock %}
+{% block content %}
+<h1 class="mb-4">Панель управления</h1>
+<div class="row">
+    <div class="col-md-3 mb-3">
+        <div class="card card-stats">
+            <div class="card-body">
+                <h5 class="card-title">Пользователи</h5>
+                <h2 class="text-dark">{{ users_count }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card card-stats">
+            <div class="card-body">
+                <h5 class="card-title">Всего билетов</h5>
+                <h2 class="text-dark">{{ tickets_count }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card card-stats">
+            <div class="card-body">
+                <h5 class="card-title">Активных билетов</h5>
+                <h2 class="text-dark">{{ active_tickets }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card card-stats">
+            <div class="card-body">
+                <h5 class="card-title">Чеков загружено</h5>
+                <h2 class="text-dark">{{ receipts_count }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-6"><div class="card"><div class="card-header">Регистрации по дням</div><div class="card-body"><canvas id="usersChart"></canvas></div></div></div>
+    <div class="col-md-6"><div class="card"><div class="card-header">Билеты по дням</div><div class="card-body"><canvas id="ticketsChart"></canvas></div></div></div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+    const usersData = {{ users_chart_data | tojson }};
+    const ticketsData = {{ tickets_chart_data | tojson }};
+    new Chart(document.getElementById('usersChart'), { type: 'line', data: { labels: usersData.labels, datasets: [{ label: 'Пользователи', data: usersData.values, borderColor: '#8b3c3c', fill: false }] } });
+    new Chart(document.getElementById('ticketsChart'), { type: 'line', data: { labels: ticketsData.labels, datasets: [{ label: 'Билеты', data: ticketsData.values, borderColor: '#5f7a4b', fill: false }] } });
+</script>
+{% endblock %}
