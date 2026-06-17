@@ -27,7 +27,7 @@ async def handle_receipt(message: Message):
 
     is_valid, error, extracted = await validate_receipt_photo(file_bytes)
     if not is_valid:
-        await message.answer(f"❌ {error}")
+        await message.answer(f"❌ {error}", parse_mode=None)
         return
 
     filename = f"receipt_{message.from_user.id}_{int(datetime.utcnow().timestamp())}.jpg"

@@ -91,10 +91,9 @@ def _extract_quantity(line: str) -> int:
     return 1
 
 
-async def extract_tapitapi_items(image_bytes: bytes) -> list[dict]:
-    text = await recognize_receipt_text(image_bytes)
+def extract_tapitapi_items_from_text(text: str) -> list[dict]:
     items = []
-    for raw_line in text.splitlines():
+    for raw_line in (text or "").splitlines():
         line = normalize_product_name(raw_line)
         if not is_tapitapi_product(line):
             continue
@@ -110,3 +109,17 @@ async def extract_tapitapi_items(image_bytes: bytes) -> list[dict]:
             }
         )
     return items
+
+
+def format_ocr_preview(text: str, limit: int = 1200) -> str:
+    preview = (text or "").strip()
+    if not preview:
+        return "OCR не вернул текст."
+    if len(preview) > limit:
+        return f"{preview[:limit]}..."
+    return preview
+
+
+async def extract_tapitapi_items(image_bytes: bytes) -> list[dict]:
+    text = await recognize_receipt_text(image_bytes)
+    return extract_tapitapi_items_from_text(text)
