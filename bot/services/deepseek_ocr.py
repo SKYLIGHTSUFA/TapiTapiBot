@@ -55,7 +55,13 @@ def _run_ocr_sync(image_bytes: bytes) -> str:
     image_path = _save_temp_image(image_bytes)
     output_dir = tempfile.mkdtemp(prefix="deepseek_ocr_")
     try:
-        prompt = "<image>\nFree OCR."
+        prompt = (
+            "<image>\n"
+            "Read this Russian retail receipt. Return only product/item lines with quantities. "
+            "Pay special attention to wine product names similar to Tapitapi / TAPITAPI / "
+            "tapitani / тапитапи / ТАПИТАПИ / тапитани. "
+            "Do not correct the text silently: output what you see on the receipt."
+        )
         result = model.infer(
             tokenizer,
             prompt=prompt,

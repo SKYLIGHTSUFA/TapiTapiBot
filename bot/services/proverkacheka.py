@@ -1,5 +1,7 @@
 import math
+import re
 from datetime import datetime
+from difflib import SequenceMatcher
 from urllib.parse import parse_qs, urlparse
 
 import cv2
@@ -9,6 +11,8 @@ import numpy as np
 from bot.config import PROVERKACHEKA_API_URL, PROVERKACHEKA_TOKEN
 
 TAPITAPI_NAMES = ("tapitapi", "тапитапи")
+TAPITAPI_OCR_VARIANTS = ("tapitani", "тапитани")
+TAPITAPI_SIMILARITY_THRESHOLD = 0.75
 
 
 class ReceiptApiError(Exception):
@@ -21,7 +25,19 @@ def normalize_product_name(name: str) -> str:
 
 def is_tapitapi_product(name: str) -> bool:
     normalized = normalize_product_name(name).casefold()
-    return any(alias in normalized for alias in TAPITAPI_NAMES)
+    aliases = TAPITAPI_NAMES + TAPITAPI_OCR_VARIANTS
+    if any(alias in normalized for alias in aliases):
+        return True
+
+    words = re.findall(r"[a-zа-яё]+", normalized)
+    for word in words:
+        for alias in TAPITAPI_NAMES:
+            if abs(len(word) - len(alias)) > 2:
+                continue
+            similarity = SequenceMatcher(None, word, alias).ratio()
+            if similarity >= TAPITAPI_SIMILARITY_THRESHOLD:
+                return True
+    return False
 
 
 def _decode_qr_with_opencv(image_bytes: bytes) -> str | None:
