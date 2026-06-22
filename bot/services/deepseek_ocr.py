@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import io
 import os
 import re
@@ -86,17 +87,23 @@ def _run_ocr_sync(image_bytes: bytes) -> str:
     image_path = _save_temp_image(image_bytes)
     try:
         with tempfile.TemporaryDirectory(prefix="deepseek_ocr_") as output_dir:
-            result = model.infer(
-                tokenizer,
-                prompt="<image>\nFree OCR. ",
-                image_file=image_path,
-                output_path=output_dir,
-                base_size=1024,
-                image_size=768,
-                crop_mode=True,
-                save_results=True,
+            stdout_buffer = io.StringIO()
+            with contextlib.redirect_stdout(stdout_buffer):
+                result = model.infer(
+                    tokenizer,
+                    prompt="<image>\nFree OCR. ",
+                    image_file=image_path,
+                    output_path=output_dir,
+                    base_size=1024,
+                    image_size=768,
+                    crop_mode=True,
+                    save_results=True,
+                )
+            return (
+                _result_to_text(result).strip()
+                or _read_saved_ocr_output(output_dir)
+                or stdout_buffer.getvalue().strip()
             )
-            return _result_to_text(result).strip() or _read_saved_ocr_output(output_dir)
     finally:
         try:
             os.remove(image_path)
