@@ -2,7 +2,6 @@ import exifread
 import io
 from datetime import datetime
 from sqlalchemy import select
-from bot.config import START_DATE
 from bot.models.database import AsyncSessionLocal, Receipt
 from bot.services.deepseek_ocr import (
     DeepSeekOcrError,
@@ -48,10 +47,7 @@ async def validate_receipt_photo(image_bytes: bytes):
     except ReceiptApiError as exc:
         return False, str(exc), {}
 
-    # 4. Проверка даты акции
-    start = datetime.strptime(START_DATE, "%Y-%m-%d")
-    if extracted["purchase_date"] < start:
-        return False, f"Чек ранее даты старта акции ({START_DATE})", {}
+    # 4. Проверка даты покупки
     if extracted["purchase_date"] > datetime.utcnow():
         return False, "Дата покупки в будущем", {}
 
