@@ -2,7 +2,7 @@ from bot.services.audit import log_action
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, HTTPException, Depends, status, Request, Form
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 import secrets
 import os
@@ -23,8 +23,15 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 def verify_auth(credentials: HTTPBasicCredentials = Depends(security)):
     correct = secrets.compare_digest(credentials.password, ADMIN_WEB_PASSWORD)
     if not correct:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            headers={"WWW-Authenticate": "Basic"},
+        )
     return True
+
+@app.get("/")
+async def root_redirect():
+    return RedirectResponse(url="/admin")
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_panel(request: Request, auth=Depends(verify_auth)):

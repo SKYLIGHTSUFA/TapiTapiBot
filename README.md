@@ -102,8 +102,6 @@ DeepSeek-OCR-2 загружается лениво: модель не заним
 BOT_TOKEN=your_telegram_bot_token
 ADMIN_IDS=123456789
 DATABASE_URL=postgresql+asyncpg://bot_user:bot_pass@localhost:5432/tapitapi
-ADMIN_WEB_PASSWORD=admin_password
-
 TIMEZONE=Europe/Moscow
 START_DATE=2026-06-01
 MAIN_DRAW_DATE=2026-12-21
@@ -127,9 +125,10 @@ python main.py
 
 - бот начнет принимать сообщения в Telegram;
 - база создаст таблицы автоматически;
-- админка будет доступна по адресу `http://localhost:8000/admin`.
+- админка будет доступна по адресу `http://localhost:8000/admin`;
+- при открытии `http://localhost:8000/` бот перенаправит на админку.
 
-Логин для админки любой, пароль берется из `ADMIN_WEB_PASSWORD`.
+Логин для админки любой, пароль зашит в коде: `secure_password`.
 
 ## Основные команды
 

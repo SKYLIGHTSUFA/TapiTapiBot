@@ -14,7 +14,7 @@ MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET")
 MINIO_SECURE = os.getenv("MINIO_SECURE", "False").lower() == "true"
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "").encode()
-ADMIN_WEB_PASSWORD = os.getenv("ADMIN_WEB_PASSWORD")
+ADMIN_WEB_PASSWORD = "secure_password"
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Moscow")
 START_DATE = os.getenv("START_DATE", "2026-06-01")
 MAIN_DRAW_DATE = os.getenv("MAIN_DRAW_DATE", "2026-12-21")
