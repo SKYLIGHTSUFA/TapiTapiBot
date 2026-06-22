@@ -50,29 +50,53 @@ def _save_temp_image(image_bytes: bytes) -> str:
     return image_path
 
 
+def _result_to_text(result) -> str:
+    if result is None:
+        return ""
+    if isinstance(result, str):
+        return result
+    if isinstance(result, (list, tuple)):
+        return "\n".join(_result_to_text(item) for item in result if item is not None)
+    if isinstance(result, dict):
+        return "\n".join(_result_to_text(value) for value in result.values() if value is not None)
+    return str(result)
+
+
+def _read_saved_ocr_output(output_dir: str) -> str:
+    parts = []
+    allowed_extensions = {".txt", ".md", ".json"}
+    for root, _, filenames in os.walk(output_dir):
+        for filename in filenames:
+            _, ext = os.path.splitext(filename)
+            if ext.casefold() not in allowed_extensions:
+                continue
+            path = os.path.join(root, filename)
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as file:
+                    content = file.read().strip()
+            except OSError:
+                continue
+            if content:
+                parts.append(content)
+    return "\n\n".join(parts)
+
+
 def _run_ocr_sync(image_bytes: bytes) -> str:
     tokenizer, model = _load_model()
     image_path = _save_temp_image(image_bytes)
-    output_dir = tempfile.mkdtemp(prefix="deepseek_ocr_")
     try:
-        prompt = (
-            "<image>\n"
-            "Read this Russian retail receipt. Return only product/item lines with quantities. "
-            "Pay special attention to wine product names similar to Tapitapi / TAPITAPI / "
-            "tapitani / тапитапи / ТАПИТАПИ / тапитани. "
-            "Do not correct the text silently: output what you see on the receipt."
-        )
-        result = model.infer(
-            tokenizer,
-            prompt=prompt,
-            image_file=image_path,
-            output_path=output_dir,
-            base_size=1024,
-            image_size=768,
-            crop_mode=True,
-            save_results=False,
-        )
-        return str(result or "")
+        with tempfile.TemporaryDirectory(prefix="deepseek_ocr_") as output_dir:
+            result = model.infer(
+                tokenizer,
+                prompt="<image>\nFree OCR. ",
+                image_file=image_path,
+                output_path=output_dir,
+                base_size=1024,
+                image_size=768,
+                crop_mode=True,
+                save_results=True,
+            )
+            return _result_to_text(result).strip() or _read_saved_ocr_output(output_dir)
     finally:
         try:
             os.remove(image_path)
