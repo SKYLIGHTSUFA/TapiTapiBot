@@ -4,6 +4,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from bot.keyboards.inline import agreement_keyboard, phone_keyboard
+from bot.keyboards.menu import main_menu
 from bot.models.database import AsyncSessionLocal, User, UserStatus
 from bot.services.encryption import encrypt
 from bot.services.audit import log_action
@@ -100,11 +101,10 @@ async def process_birthdate(message: Message, state: FSMContext):
         session.add(user)
         await session.commit()
     await log_action("user_registered", message.from_user.id, {"phone": data['phone'][:5]+"***"})
-    await message.answer("✅ Регистрация завершена! Теперь загружайте чеки.")
-    from bot.keyboards.menu import main_menu
-    await message.answer("Главное меню:", reply_markup=main_menu())
-    from bot.keyboards.menu import main_menu
-    await message.answer("Главное меню:", reply_markup=main_menu())
+    await message.answer(
+        "✅ Регистрация завершена! Теперь загружайте чеки.",
+        reply_markup=main_menu(),
+    )
     await state.clear()
 
 @router.message(Command("cancel"))

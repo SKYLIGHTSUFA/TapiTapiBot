@@ -102,22 +102,37 @@ psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE tapitapi TO bot_user;"
 DATABASE_URL=postgresql+asyncpg://bot_user:bot_pass@localhost:5432/tapitapi
 ```
 
-### 3. Установить ZBar для QR-кодов
+### 3. QR-коды: pyzbar на Windows
 
-Для `pyzbar` на Windows нужна библиотека ZBar.
+Пакета `zbar` в conda **нет**. Правильное имя — `pyzbar`.
 
-Вариант 1 — через conda (проще):
+Основной путь чтения QR — **OpenCV** (`QRCodeDetector`). Он работает без ZBar.
+
+Fallback через `pyzbar` ставится так:
 
 ```powershell
-conda install -c conda-forge zbar
+pip install pyzbar
 ```
 
-Вариант 2 — вручную:
+На Windows wheel `pyzbar` уже содержит `libzbar-64.dll` и `libiconv.dll`.
 
-1. Скачайте ZBar для Windows.
-2. Положите `libzbar-64.dll` в папку, которая есть в `PATH`, или рядом с `python.exe` вашего окружения.
+Через conda (опционально):
 
-OpenCV QR читает QR и без ZBar, но fallback через `pyzbar` работает только если ZBar установлен.
+```powershell
+conda install -c conda-forge pyzbar
+```
+
+Если при импорте `pyzbar` ошибка про `libzbar-64.dll`, установите **Visual C++ Redistributable 2013 (x64)**:
+
+https://www.microsoft.com/en-us/download/details.aspx?id=40784
+
+Скачайте `vcredist_x64.exe`, установите и перезапустите PowerShell.
+
+Проверка:
+
+```powershell
+python -c "from pyzbar.pyzbar import decode; print('pyzbar OK')"
+```
 
 ### 4. Создать виртуальное окружение
 
@@ -275,6 +290,20 @@ http://localhost:8000/admin
 ```
 
 Пароль: `secure_password`.
+
+### `conda install zbar` — PackagesNotFoundError
+
+Пакета `zbar` в conda нет. Используйте:
+
+```powershell
+pip install pyzbar
+```
+
+или:
+
+```powershell
+conda install -c conda-forge pyzbar
+```
 
 ### OCR долго работает
 
