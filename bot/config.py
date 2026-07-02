@@ -24,9 +24,6 @@ FNS_API_URL = os.getenv("FNS_API_URL")
 FNS_API_KEY = os.getenv("FNS_API_KEY")
 PROVERKACHEKA_API_URL = os.getenv("PROVERKACHEKA_API_URL", "https://proverkacheka.com/api/v1/check/get")
 PROVERKACHEKA_TOKEN = "39928.KVmRrRbMpDNSOo6cy"
-DEEPSEEK_OCR_MODEL = os.getenv("DEEPSEEK_OCR_MODEL", "deepseek-ai/DeepSeek-OCR-2")
-DEEPSEEK_OCR_DEVICE = os.getenv("DEEPSEEK_OCR_DEVICE", "cuda")
-DEEPSEEK_OCR_ENABLED = os.getenv("DEEPSEEK_OCR_ENABLED", "true").lower() == "true"
 PUBLIC_IP = os.getenv("PUBLIC_IP", "72.56.20.106")
 MEDIA_ROOT = os.getenv("MEDIA_ROOT", str(BASE_DIR / "media"))
 STATIC_DIR = os.getenv("STATIC_DIR", str(BASE_DIR / "static"))

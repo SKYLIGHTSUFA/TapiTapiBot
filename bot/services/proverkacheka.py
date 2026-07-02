@@ -1,3 +1,4 @@
+import io
 import math
 import re
 from datetime import datetime
@@ -11,7 +12,7 @@ import numpy as np
 from bot.config import PROVERKACHEKA_API_URL, PROVERKACHEKA_TOKEN
 
 TAPITAPI_NAMES = ("tapitapi", "тапитапи")
-TAPITAPI_OCR_VARIANTS = ("tapitani", "тапитани")
+TAPITAPI_ALIASES = ("tapitani", "тапитани")
 TAPITAPI_SIMILARITY_THRESHOLD = 0.75
 
 
@@ -25,7 +26,7 @@ def normalize_product_name(name: str) -> str:
 
 def is_tapitapi_product(name: str) -> bool:
     normalized = normalize_product_name(name).casefold()
-    aliases = TAPITAPI_NAMES + TAPITAPI_OCR_VARIANTS
+    aliases = TAPITAPI_NAMES + TAPITAPI_ALIASES
     if any(alias in normalized for alias in aliases):
         return True
 
@@ -90,22 +91,34 @@ def _parse_qr(raw_qr: str) -> dict:
     }
 
 
+def _normalize_datetime_string(value: str) -> str:
+    return (value or "").strip().replace("t", "T")
+
+
 def _parse_datetime(value: str | int | None, raw_qr: str) -> datetime:
     if isinstance(value, int):
         return datetime.fromtimestamp(value)
+
+    candidates = []
     if value:
-        for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%d.%m.%Y %H:%M:%S"):
+        candidates.append(_normalize_datetime_string(str(value)))
+    qr_date = _normalize_datetime_string(_parse_qr(raw_qr).get("date", ""))
+    if qr_date:
+        candidates.append(qr_date)
+
+    formats = (
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%d.%m.%Y %H:%M:%S",
+        "%Y%m%dT%H%M",
+        "%Y%m%dT%H%M%S",
+    )
+    for candidate in candidates:
+        for fmt in formats:
             try:
-                return datetime.strptime(str(value), fmt)
+                return datetime.strptime(candidate, fmt)
             except ValueError:
                 pass
-
-    qr_date = _parse_qr(raw_qr).get("date", "")
-    for fmt in ("%Y%m%dT%H%M", "%Y%m%dT%H%M%S"):
-        try:
-            return datetime.strptime(qr_date, fmt)
-        except ValueError:
-            pass
     raise ReceiptApiError("Не удалось определить дату покупки")
 
 
@@ -118,6 +131,8 @@ def _quantity_to_tickets(quantity: int | float | str | None) -> int:
         value = float(quantity or 0)
     except (TypeError, ValueError):
         value = 0
+    if value >= 1000:
+        return max(0, math.floor(value / 1000))
     return max(0, math.floor(value))
 
 
@@ -128,14 +143,14 @@ def _extract_tapitapi_items(receipt_json: dict) -> tuple[list[dict], int]:
         name = normalize_product_name(item.get("name", ""))
         if not is_tapitapi_product(name):
             continue
-        quantity = item.get("quantity", 1)
+        quantity = item.get("quantity", 1000)
         ticket_count = _quantity_to_tickets(quantity)
         if ticket_count == 0:
             continue
         matched_items.append(
             {
                 "name": name,
-                "quantity": quantity,
+                "quantity": ticket_count,
                 "ticket_count": ticket_count,
                 "price": _kopecks_to_rubles(item.get("price")),
                 "sum": _kopecks_to_rubles(item.get("sum")),
@@ -145,28 +160,13 @@ def _extract_tapitapi_items(receipt_json: dict) -> tuple[list[dict], int]:
     return matched_items, total_bottles
 
 
-async def fetch_receipt(raw_qr: str) -> dict:
-    if not PROVERKACHEKA_TOKEN:
-        raise ReceiptApiError("Не настроен PROVERKACHEKA_TOKEN для проверки чеков")
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        try:
-            response = await client.post(
-                PROVERKACHEKA_API_URL,
-                data={"token": PROVERKACHEKA_TOKEN, "qrraw": raw_qr},
-            )
-            response.raise_for_status()
-            payload = response.json()
-        except httpx.HTTPError as exc:
-            raise ReceiptApiError("Сервис проверки чеков временно недоступен") from exc
-        except ValueError as exc:
-            raise ReceiptApiError("Сервис проверки чеков вернул некорректный ответ") from exc
-
+def _parse_api_payload(payload: dict, fallback_qr: str | None) -> dict:
     if payload.get("code") != 1:
         message = payload.get("message") or payload.get("data") or "Чек не найден в сервисе проверки"
         raise ReceiptApiError(str(message))
 
-    receipt_json = (payload.get("data") or {}).get("json") or {}
+    data = payload.get("data") or {}
+    receipt_json = data.get("json") or {}
     if not receipt_json:
         raise ReceiptApiError("В ответе сервиса нет данных чека")
 
@@ -174,16 +174,75 @@ async def fetch_receipt(raw_qr: str) -> dict:
     if bottles_count == 0:
         raise ReceiptApiError("API проверки чека не подтвердил наличие вина Tapitapi в номенклатуре")
 
-    qr_params = _parse_qr(raw_qr)
+    request_data = payload.get("request") or {}
+    manual = request_data.get("manual") or {}
+    raw_qr = request_data.get("qrraw") or fallback_qr or ""
+    qr_params = _parse_qr(raw_qr) if raw_qr else {}
+
     amount = _kopecks_to_rubles(receipt_json.get("totalSum"))
+    if not amount and manual.get("sum"):
+        amount = float(manual["sum"])
+    if not amount and qr_params.get("sum"):
+        amount = float(qr_params["sum"])
+
     return {
         "purchase_date": _parse_datetime(receipt_json.get("dateTime"), raw_qr),
-        "amount": amount or float(qr_params.get("sum") or 0),
-        "fn_code": str(receipt_json.get("fiscalDriveNumber") or qr_params["fn"]),
-        "fp_code": str(receipt_json.get("fiscalSign") or qr_params["fp"]),
-        "receipt_number": str(receipt_json.get("fiscalDocumentNumber") or qr_params["fd"]),
+        "amount": amount,
+        "fn_code": str(receipt_json.get("fiscalDriveNumber") or manual.get("fn") or qr_params.get("fn", "")),
+        "fp_code": str(receipt_json.get("fiscalSign") or manual.get("fp") or qr_params.get("fp", "")),
+        "receipt_number": str(
+            receipt_json.get("fiscalDocumentNumber") or manual.get("fd") or qr_params.get("fd", "")
+        ),
         "product_name": ", ".join(item["name"] for item in tapitapi_items),
         "products_data": tapitapi_items,
         "bottles_count": bottles_count,
         "raw_qr": raw_qr,
     }
+
+
+async def _request_receipt(client: httpx.AsyncClient, raw_qr: str | None, image_bytes: bytes | None) -> dict:
+    if raw_qr:
+        response = await client.post(
+            PROVERKACHEKA_API_URL,
+            data={"token": PROVERKACHEKA_TOKEN, "qrraw": raw_qr},
+        )
+        return response
+
+    if image_bytes:
+        files = {"qrfile": ("receipt.jpg", io.BytesIO(image_bytes), "image/jpeg")}
+        response = await client.post(
+            PROVERKACHEKA_API_URL,
+            data={"token": PROVERKACHEKA_TOKEN},
+            files=files,
+        )
+        return response
+
+    raise ReceiptApiError("Нет данных для проверки чека")
+
+
+async def _post_receipt(client: httpx.AsyncClient, raw_qr: str | None, image_bytes: bytes | None) -> dict:
+    response = await _request_receipt(client, raw_qr, image_bytes)
+    response.raise_for_status()
+    return response.json()
+
+
+async def fetch_receipt(raw_qr: str | None = None, image_bytes: bytes | None = None) -> dict:
+    if not PROVERKACHEKA_TOKEN:
+        raise ReceiptApiError("Не настроен PROVERKACHEKA_TOKEN для проверки чеков")
+    if not raw_qr and not image_bytes:
+        raise ReceiptApiError("Нет данных для проверки чека")
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        try:
+            if raw_qr:
+                payload = await _post_receipt(client, raw_qr, None)
+                if payload.get("code") != 1 and image_bytes:
+                    payload = await _post_receipt(client, None, image_bytes)
+            else:
+                payload = await _post_receipt(client, None, image_bytes)
+        except httpx.HTTPError as exc:
+            raise ReceiptApiError("Сервис проверки чеков временно недоступен") from exc
+        except ValueError as exc:
+            raise ReceiptApiError("Сервис проверки чеков вернул некорректный ответ") from exc
+
+        return _parse_api_payload(payload, raw_qr)

@@ -200,7 +200,14 @@ async def get_media(filename: str):
     return {"error": "File not found"}
 
 async def start_web_admin():
+    import logging
     import uvicorn
+    from bot.config import PUBLIC_IP
+
+    logging.getLogger("uvicorn.error").info(
+        "Админка: http://127.0.0.1:8000/admin | http://%s:8000/admin",
+        PUBLIC_IP,
+    )
     config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
     server = uvicorn.Server(config)
     await server.serve()
